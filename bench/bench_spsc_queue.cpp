@@ -3,6 +3,9 @@
 #include <thread>
 #include <mutex>
 #include <pthread.h>
+#ifdef HAVE_BOOST
+#include <boost/lockfree/spsc_queue.hpp>
+#endif
 #ifdef __APPLE__
 #include <mach/thread_act.h>
 #include <mach/thread_policy.h>
@@ -117,5 +120,49 @@ static void BM_Mutex(benchmark::State& state) {
     state.SetItemsProcessed(state.iterations());
 }
 BENCHMARK(BM_Mutex);
+
+#ifdef HAVE_BOOST
+static void BM_Boost_Throughput(benchmark::State& state) {
+    pin_thread(kConsumerCore);
+    boost::lockfree::spsc_queue<int, boost::lockfree::capacity<1024>> queue;
+    std::atomic<bool> flag{true};
+    int val = 5;
+    std::thread producer([&]() {
+        pin_thread(kProducerCore);
+        while (flag.load(std::memory_order_relaxed)) queue.push(val);
+    });
+    for (auto _ : state) {
+        int v;
+        while (!queue.pop(v));
+    }
+    flag.store(false, std::memory_order_relaxed);
+    producer.join();
+    state.SetItemsProcessed(state.iterations());
+}
+BENCHMARK(BM_Boost_Throughput);
+
+static void BM_Boost_Latency_Roundtrip(benchmark::State& state) {
+    pin_thread(kConsumerCore);
+    boost::lockfree::spsc_queue<int, boost::lockfree::capacity<1024>> q1, q2;
+    std::atomic<bool> flag{true};
+    int val = 0;
+    std::thread worker([&]() {
+        pin_thread(kProducerCore);
+        int v;
+        while (flag.load(std::memory_order_relaxed)) {
+            if (q1.pop(v)) q2.push(v);
+        }
+    });
+    for (auto _ : state) {
+        q1.push(val);
+        int v;
+        while (!q2.pop(v));
+    }
+    flag.store(false, std::memory_order_relaxed);
+    worker.join();
+    state.SetItemsProcessed(state.iterations());
+}
+BENCHMARK(BM_Boost_Latency_Roundtrip);
+#endif
 
 BENCHMARK_MAIN();
