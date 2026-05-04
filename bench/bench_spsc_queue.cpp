@@ -118,4 +118,33 @@ static void BM_Mutex(benchmark::State& state) {
 }
 BENCHMARK(BM_Mutex);
 
+// Throughput across capacities — each value instantiates a distinct template
+template <std::size_t N>
+static void run_throughput(benchmark::State& state) {
+    pin_thread(kConsumerCore);
+    std::atomic<bool> flag{true};
+    SPSCQueue<int, N> queue;
+    int val = 5;
+    std::thread producer([&]() {
+        pin_thread(kProducerCore);
+        while (flag.load(std::memory_order_relaxed)) queue.push(val);
+    });
+    for (auto _ : state) queue.pop(val);
+    flag.store(false, std::memory_order_relaxed);
+    producer.join();
+    state.SetItemsProcessed(state.iterations());
+}
+
+static void BM_Throughput_VaryingCapacity(benchmark::State& state) {
+    switch (state.range(0)) {
+        case    64: run_throughput<   64>(state); break;
+        case   256: run_throughput<  256>(state); break;
+        case  1024: run_throughput< 1024>(state); break;
+        case  4096: run_throughput< 4096>(state); break;
+        case 16384: run_throughput<16384>(state); break;
+        case 65536: run_throughput<65536>(state); break;
+    }
+}
+BENCHMARK(BM_Throughput_VaryingCapacity)->RangeMultiplier(4)->Range(64, 65536);
+
 BENCHMARK_MAIN();
