@@ -2,6 +2,31 @@
 #include "spsc_queue.hpp"
 #include <thread>
 #include <mutex>
+#include <pthread.h>
+#ifdef __APPLE__
+#include <mach/thread_act.h>
+#include <mach/thread_policy.h>
+#endif
+
+static constexpr int kConsumerCore = 0;
+static constexpr int kProducerCore = 2; // avoid SMT siblings on Intel
+
+static void pin_thread(int core) {
+#ifdef __linux__
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(core, &cpuset);
+    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+#elif defined(__APPLE__)
+    // macOS has no hard pinning; affinity tags hint the scheduler to keep
+    // threads with different tags on different physical cores
+    thread_affinity_policy_data_t policy = {core};
+    thread_policy_set(pthread_mach_thread_np(pthread_self()),
+                      THREAD_AFFINITY_POLICY,
+                      reinterpret_cast<thread_policy_t>(&policy),
+                      THREAD_AFFINITY_POLICY_COUNT);
+#endif
+}
 
 // Baseline: raw push/pop throughput single-threaded
 static void BM_PushPop_SingleThreaded(benchmark::State& state) {
@@ -16,11 +41,12 @@ BENCHMARK(BM_PushPop_SingleThreaded);
 
 // Core benchmark: producer and consumer on separate threads
 static void BM_Throughput_Threaded(benchmark::State& state) {
-    
+    pin_thread(kConsumerCore);
     std::atomic<bool> flag {true};
     SPSCQueue<int, 1024> queue;
     int val = 5;
     std::thread producer = std::thread([&]() {
+        pin_thread(kProducerCore);
         while(flag.load(std::memory_order_relaxed)) queue.push(val);
     });
     for (auto _ : state) {
@@ -34,12 +60,13 @@ BENCHMARK(BM_Throughput_Threaded);
 
 // Latency: ping-pong a value between two queues on two threads
 static void BM_Latency_Roundtrip(benchmark::State& state) {
+    pin_thread(kConsumerCore);
     SPSCQueue<int, 1024> q1, q2;
     std::atomic<bool> flag{true};
     int val = 0;
 
-    // worker: receive on q1, send back on q2
     std::thread worker([&]() {
+        pin_thread(kProducerCore);
         int v;
         while (flag.load(std::memory_order_relaxed)) {
             if (q1.pop(v)) q2.push(v);
@@ -59,6 +86,7 @@ BENCHMARK(BM_Latency_Roundtrip);
 
 // Baseline: producer and consumer on separate threads with a mutex
 static void BM_Mutex(benchmark::State& state) {
+    pin_thread(kConsumerCore);
     std::mutex mtx;
     std::array<int, 1024> buffer;
     size_t head = 0;
@@ -66,6 +94,7 @@ static void BM_Mutex(benchmark::State& state) {
     std::atomic<bool> flag {true};
     int val = 5;
     std::thread producer = std::thread([&]() {
+        pin_thread(kProducerCore);
         while(flag.load(std::memory_order_relaxed)) {
             std::lock_guard<std::mutex> lock(mtx);
             if((tail + 1) % 1024 == head) continue;
