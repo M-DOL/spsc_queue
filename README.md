@@ -40,10 +40,10 @@ Producer pinned to core 2, consumer pinned to core 0. Eliminates OS scheduling n
 | Benchmark | Time | Throughput |
 |---|---|---|
 | Single-threaded push/pop | 1.98 ns | — |
-| Lock-free SPSC (threaded) | 40.6 ns | 24.7M items/sec |
-| Mutex ring buffer (threaded) | 170 ns | 5.9M items/sec |
-| Roundtrip latency | 80.0 ns | 12.5M items/sec |
+| Lock-free SPSC (threaded) | 38.3 ns | 26.2M items/sec |
+| Mutex ring buffer (threaded) | 162 ns | 6.19M items/sec |
+| Roundtrip latency | 78.1 ns | 12.9M items/sec |
 
-**~4x throughput improvement over a mutex-protected ring buffer.**
+**~4.2x throughput improvement over a mutex-protected ring buffer.**
 
 On Linux, `pthread_setaffinity_np` hard-pins each thread to its core. On macOS, a Mach affinity tag hints the scheduler to keep threads on separate physical cores (no hard guarantee).
