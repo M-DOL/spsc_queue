@@ -35,6 +35,8 @@ Fixed at compile time via template parameter. Buffer is stack allocated, size is
 
 ## Benchmark Results (Apple M1, 10 cores)
 
+Producer pinned to core 2, consumer pinned to core 0. Eliminates OS scheduling noise and cache migration across runs.
+
 | Benchmark | Time | Throughput |
 |---|---|---|
 | Single-threaded push/pop | 1.98 ns | — |
@@ -43,3 +45,5 @@ Fixed at compile time via template parameter. Buffer is stack allocated, size is
 | Roundtrip latency | 80.0 ns | 12.5M items/sec |
 
 **~4x throughput improvement over a mutex-protected ring buffer.**
+
+On Linux, `pthread_setaffinity_np` hard-pins each thread to its core. On macOS, a Mach affinity tag hints the scheduler to keep threads on separate physical cores (no hard guarantee).
