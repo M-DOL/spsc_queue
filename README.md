@@ -1,0 +1,45 @@
+# spsc_queue
+
+A lock-free single-producer single-consumer queue in C++20, implemented as a fixed-size ring buffer with cache-line-aware layout.
+
+## Build
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```
+
+## Test
+
+```bash
+cd build && ctest --output-on-failure
+```
+
+## Benchmark
+
+```bash
+./build/bench/spsc_bench
+```
+
+## Design Notes
+
+**Capacity strategy**
+Fixed at compile time via template parameter. Buffer is stack allocated, size is known at compile time, and `% Capacity` can be optimized to `& (Capacity - 1)` for power-of-two sizes. Enforced via `static_assert`.
+
+**Memory ordering**
+- Producer: relaxed load of `tail_` (owned by producer), relaxed load of `head_` (space check only, no data access follows), release store on `tail_` after writing to buffer slot.
+- Consumer: relaxed load of `head_` (owned by consumer), acquire load of `tail_` (pairs with producer's release, ensures buffer write is visible before slot is read), release store on `head_` after reading.
+
+**False sharing mitigation**
+`head_`, `tail_`, and `data_` are each aligned to 64-byte cache line boundaries via `alignas(64)`, preventing the producer and consumer from bouncing a shared cache line.
+
+## Benchmark Results (Apple M1, 10 cores)
+
+| Benchmark | Time | Throughput |
+|---|---|---|
+| Single-threaded push/pop | 1.98 ns | — |
+| Lock-free SPSC (threaded) | 40.6 ns | 24.7M items/sec |
+| Mutex ring buffer (threaded) | 170 ns | 5.9M items/sec |
+| Roundtrip latency | 80.0 ns | 12.5M items/sec |
+
+**~4x throughput improvement over a mutex-protected ring buffer.**
