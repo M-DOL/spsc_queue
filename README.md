@@ -41,8 +41,12 @@ Producer pinned to core 2, consumer pinned to core 0. Eliminates OS scheduling n
 |---|---|---|
 | Single-threaded push/pop | 1.98 ns | — |
 | Lock-free SPSC (threaded) | 38.3 ns | 26.2M items/sec |
-| Mutex ring buffer (threaded) | 162 ns | 6.19M items/sec |
 | Roundtrip latency | 78.1 ns | 12.9M items/sec |
+| Boost lockfree::spsc_queue (throughput) | 30.3 ns | 33.1M items/sec |
+| Boost lockfree::spsc_queue (latency) | 117 ns | 8.52M items/sec |
+| Mutex ring buffer (threaded) | 162 ns | 6.19M items/sec |
+
+Boost has higher throughput (33.1M vs 26.2M items/sec), likely due to batched index updates reducing atomic traffic. This queue has lower roundtrip latency (78.1 vs 117 ns) — each operation is published immediately on release store with no batching delay.
 
 **~4.2x throughput improvement over a mutex-protected ring buffer.**
 
